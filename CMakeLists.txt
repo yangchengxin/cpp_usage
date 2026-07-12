@@ -6,5 +6,6 @@ set(CMAKE_CXX_STANDARD 11)
 # 添加子模块
 add_subdirectory(threadpool)
 add_subdirectory(ringbuffer)
-add_subdirectory(ringbufferV2)
+add_subdirectory(ringbufferv2)
+add_subdirectory(todostatemachine)
 
