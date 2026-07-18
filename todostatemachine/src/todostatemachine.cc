@@ -1,91 +1,155 @@
 #include "todostatemachine.hpp"
 
-// ========== 全局静态状态实例 ==========
-static TodoState g_todoState;
-static InProgressState g_inProgressState;
-static DoneState g_doneState;
-static CancelledState g_cancelledState;
+namespace todostatemachine {
 
-// ========== TodoContext 实现 ==========
-TodoContext::TodoContext(const std::string& title)
-    : title_(title), state_(&g_todoState) {}
-
-std::string TodoContext::getStateName() const {
-    return state_ ? state_->getName() : "UNKNOWN";
+// 静态转换表定义
+/**
+ * TODO状态下           ---> 收到事件START      ---> 转换至状态IN_PROGRESS
+ * IN_PROGRESS状态下    ---> 收到事件CANCEL     ---> 转换至状态TODO
+ * IN_PROGRESS状态下    ---> 收到事件COMPLETE   ---> 转换至状态DONE
+ * DONE状态下           ---> 收到任何事件都不做转换了。
+ */
+std::map<State, std::map<Event, State>>& TodoStateMachine::getTransitionTable() {
+    static std::map<State, std::map<Event, State>> table = {
+        {State::TODO, {
+            {Event::START, State::IN_PROGRESS}
+        }},
+        {State::IN_PROGRESS, {
+            {Event::CANCEL, State::TODO},
+            {Event::COMPLETE, State::DONE}
+        }},
+        {State::DONE, {
+            // 已完成状态不能再转换到其他状态
+        }}
+    };
+    return table;
 }
 
-std::string TodoContext::getTitle() const {
-    return title_;
+TodoStateMachine::TodoStateMachine() : currentState_(State::TODO), onTransition_(nullptr) {
+    // 初始状态调用进入回调
+    auto iter = onEnterCallbacks_.find(currentState_);
+    if (iter != onEnterCallbacks_.end() && iter->second) {
+        iter->second();
+    }
 }
 
-bool TodoContext::start() {
-    return state_->start(this);
+State TodoStateMachine::getCurrentState() const {
+    return currentState_;
 }
 
-bool TodoContext::complete() {
-    return state_->complete(this);
+std::string TodoStateMachine::stateToString(State state) {
+    switch (state) {
+        case State::TODO:
+            return "TODO";
+        case State::IN_PROGRESS:
+            return "IN_PROGRESS";
+        case State::DONE:
+            return "DONE";
+        default:
+            return "UNKNOWN";
+    }
 }
 
-bool TodoContext::cancel() {
-    return state_->cancel(this);
-}
+bool TodoStateMachine::handleEvent(Event event) {
+    auto& table = getTransitionTable();
+    auto stateIter = table.find(currentState_);
 
-bool TodoContext::reopen() {
-    return state_->reopen(this);
-}
+    if (stateIter == table.end()) {
+        return false;
+    }
 
-void TodoContext::setState(ITodoState* state) {
-    state_ = state;
-}
+    auto eventIter = stateIter->second.find(event);
+    if (eventIter == stateIter->second.end()) {
+        return false;
+    }
 
-// ========== TodoState 实现 ==========
-bool TodoState::start(TodoContext* context) {
-    context->setState(&g_inProgressState);
-    std::cout << "[状态转换] " << getName() << " -> IN_PROGRESS" << std::endl;
+    State fromState = currentState_;
+    State toState = eventIter->second;
+
+    // 调用退出回调
+    auto exitIter = onExitCallbacks_.find(fromState);
+    if (exitIter != onExitCallbacks_.end() && exitIter->second) {
+        exitIter->second();
+    }
+
+    currentState_ = toState;
+
+    // 调用进入回调
+    auto enterIter = onEnterCallbacks_.find(toState);
+    if (enterIter != onEnterCallbacks_.end() && enterIter->second) {
+        enterIter->second();
+    }
+
+    // 调用转换回调
+    if (onTransition_) {
+        onTransition_(fromState, toState);
+    }
+
     return true;
 }
 
-bool TodoState::cancel(TodoContext* context) {
-    context->setState(&g_cancelledState);
-    std::cout << "[状态转换] " << getName() << " -> CANCELLED" << std::endl;
-    return true;
+void TodoStateMachine::setOnTransition(std::function<void(State from, State to)> callback) {
+    onTransition_ = callback;
 }
 
-// ========== InProgressState 实现 ==========
-bool InProgressState::complete(TodoContext* context) {
-    context->setState(&g_doneState);
-    std::cout << "[状态转换] " << getName() << " -> DONE" << std::endl;
-    return true;
+void TodoStateMachine::setOnEnter(State state, std::function<void()> callback) {
+    onEnterCallbacks_[state] = callback;
 }
 
-bool InProgressState::cancel(TodoContext* context) {
-    context->setState(&g_cancelledState);
-    std::cout << "[状态转换] " << getName() << " -> CANCELLED" << std::endl;
-    return true;
+void TodoStateMachine::setOnExit(State state, std::function<void()> callback) {
+    onExitCallbacks_[state] = callback;
 }
 
-// ========== DoneState 实现 ==========
-bool DoneState::cancel(TodoContext* context) {
-    // 已完成的任务不能取消
-    std::cout << "[错误] 已完成的任务不能取消" << std::endl;
-    return false;
+void TodoStateMachine::reset() {
+    currentState_ = State::TODO;
 }
 
-bool DoneState::reopen(TodoContext* context) {
-    context->setState(&g_todoState);
-    std::cout << "[状态转换] " << getName() << " -> TODO (重新打开)" << std::endl;
-    return true;
+bool TodoStateMachine::canHandleEvent(Event event) const {
+    auto& table = getTransitionTable();
+    auto stateIter = table.find(currentState_);
+
+    if (stateIter == table.end()) {
+        return false;
+    }
+
+    return stateIter->second.find(event) != stateIter->second.end();
 }
 
-// ========== CancelledState 实现 ==========
-bool CancelledState::start(TodoContext* context) {
-    context->setState(&g_inProgressState);
-    std::cout << "[状态转换] " << getName() << " -> IN_PROGRESS" << std::endl;
-    return true;
+std::vector<Event> TodoStateMachine::getAvailableEvents() const {
+    std::vector<Event> events;
+    auto& table = getTransitionTable();
+    auto stateIter = table.find(currentState_);
+
+    if (stateIter != table.end()) {
+        for (const auto& pair : stateIter->second) {
+            events.push_back(pair.first);
+        }
+    }
+
+    return events;
 }
 
-bool CancelledState::reopen(TodoContext* context) {
-    context->setState(&g_todoState);
-    std::cout << "[状态转换] " << getName() << " -> TODO (重新打开)" << std::endl;
-    return true;
+std::ostream& operator<<(std::ostream& os, State state) {
+    os << TodoStateMachine::stateToString(state);
+    return os;
 }
+
+std::ostream& operator<<(std::ostream& os, Event event) {
+    switch (event) {
+        case Event::START:
+            os << "START";
+            break;
+        case Event::CANCEL:
+            os << "CANCEL";
+            break;
+        case Event::COMPLETE:
+            os << "COMPLETE";
+            break;
+        default:
+            os << "UNKNOWN_EVENT";
+            break;
+    }
+    return os;
+}
+
+} // namespace todostatemachine

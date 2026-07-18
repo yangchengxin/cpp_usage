@@ -1,17 +1,18 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.21)
 project(todostatemachine)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# 可以使用中文正常显示
+add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/source-charset:utf-8>")
+
+# 头文件
+include_directories(${PROJECT_SOURCE_DIR}/include)
+
+# 添加可执行文件
+add_executable(${PROJECT_NAME} test_todostatemachine.cc)
 
 # 源文件
-set(SOURCES
+target_sources(${PROJECT_NAME} PRIVATE
     src/todostatemachine.cc
-    test_todostatemachine.cc
 )
-
-# 头文件目录
-include_directories(include)
-
-# 生成可执行文件
-add_executable(test_todostatemachine ${SOURCES})

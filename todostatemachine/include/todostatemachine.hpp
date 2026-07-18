@@ -1,124 +1,95 @@
-#pragma once
+#ifndef TODO_STATE_MACHINE_HPP
+#define TODO_STATE_MACHINE_HPP
 
 #include <string>
-#include <memory>
+#include <functional>
+#include <map>
+#include <vector>
 #include <iostream>
 
-// 前向声明
-class TodoContext;
+namespace todostatemachine {
 
-/**
- * @class ITodoState
- * @brief 状态接口基类 (State Pattern)
- */
-class ITodoState {
-public:
-    virtual ~ITodoState() = default;
+// TODO 状态定义
+enum class State {
+    TODO,        // 待办
+    IN_PROGRESS, // 进行中
+    DONE         // 已完成
+};
 
-    /// 获取状态名称
-    virtual std::string getName() const = 0;
-
-    /// 开始处理
-    virtual bool start(TodoContext* context) = 0;
-
-    /// 完成
-    virtual bool complete(TodoContext* context) = 0;
-
-    /// 取消
-    virtual bool cancel(TodoContext* context) = 0;
-
-    /// 重新打开
-    virtual bool reopen(TodoContext* context) = 0;
+// 事件定义
+enum class Event {
+    START,      // 开始
+    CANCEL,     // 取消
+    COMPLETE    // 完成
 };
 
 /**
- * @class TodoContext
- * @brief 上下文类，管理当前状态
+ * @brief 转换表方式实现的状态机
+ *
+ * 特点：
+ * - 不需要定义状态父类，也不需要写状态子类继承父类
+ * - 使用转换表(Transition Table)来映射"当前状态+事件" => "下一状态"
+ * - 状态和事件均使用枚举定义，简单直观
+ * - 新增状态/事件只需修改转换表，易于扩展
+ *
+ * 状态转换规则：
+ * - TODO --(START)--> IN_PROGRESS
+ * - IN_PROGRESS --(CANCEL)--> TODO
+ * - IN_PROGRESS --(COMPLETE)--> DONE
+ * - DONE --(任意事件)--> 无效转换
+ *
+ * 使用示例：
+ *   TodoStateMachine machine;
+ *   machine.handleEvent(Event::START);  // TODO -> IN_PROGRESS
+ *   machine.handleEvent(Event::COMPLETE); // IN_PROGRESS -> DONE
  */
-class TodoContext {
+class TodoStateMachine {
 public:
-    explicit TodoContext(const std::string& title);
+    TodoStateMachine();
 
-    /// 获取当前状态名称
-    std::string getStateName() const;
+    // 获取当前状态
+    State getCurrentState() const;
 
-    /// 获取任务标题
-    std::string getTitle() const;
+    // 获取状态名称
+    static std::string stateToString(State state);
 
-    /// 开始处理
-    bool start();
+    // 处理事件
+    bool handleEvent(Event event);
 
-    /// 完成
-    bool complete();
+    // 设置状态转换回调（状态切换时触发）
+    void setOnTransition(std::function<void(State from, State to)> callback);
 
-    /// 取消
-    bool cancel();
+    // 设置状态进入回调（进入某个状态时触发）
+    void setOnEnter(State state, std::function<void()> callback);
 
-    /// 重新打开
-    bool reopen();
+    // 设置状态退出回调（离开某个状态时触发）
+    void setOnExit(State state, std::function<void()> callback);
 
-    /// 设置内部状态（供状态类调用）
-    void setState(ITodoState* state);
+    // 重置状态机
+    void reset();
+
+    // 检查是否可以处理指定事件
+    bool canHandleEvent(Event event) const;
+
+    // 获取可用的转换
+    std::vector<Event> getAvailableEvents() const;
 
 private:
-    std::string title_;
-    ITodoState* state_;
+    State currentState_;
+    std::function<void(State from, State to)> onTransition_;
+
+    // 状态进入/退出回调表
+    std::map<State, std::function<void()>> onEnterCallbacks_;
+    std::map<State, std::function<void()>> onExitCallbacks_;
+
+    // 状态转换表
+    static std::map<State, std::map<Event, State>>& getTransitionTable();
 };
 
-// ========== 具体状态类 ==========
+// 流输出操作符重载
+std::ostream& operator<<(std::ostream& os, State state);
+std::ostream& operator<<(std::ostream& os, Event event);
 
-/**
- * @class TodoState
- * @brief 待处理状态
- */
-class TodoState final : public ITodoState {
-public:
-    std::string getName() const override { return "TODO"; }
+} // namespace todostatemachine
 
-    bool start(TodoContext* context) override;
-    bool complete(TodoContext* context) override { return false; }
-    bool cancel(TodoContext* context) override;
-    bool reopen(TodoContext* context) override { return false; }
-};
-
-/**
- * @class InProgressState
- * @brief 进行中状态
- */
-class InProgressState final : public ITodoState {
-public:
-    std::string getName() const override { return "IN_PROGRESS"; }
-
-    bool start(TodoContext* context) override { return false; }
-    bool complete(TodoContext* context) override;
-    bool cancel(TodoContext* context) override;
-    bool reopen(TodoContext* context) override { return false; }
-};
-
-/**
- * @class DoneState
- * @brief 已完成状态
- */
-class DoneState final : public ITodoState {
-public:
-    std::string getName() const override { return "DONE"; }
-
-    bool start(TodoContext* context) override { return false; }
-    bool complete(TodoContext* context) override { return false; }
-    bool cancel(TodoContext* context) override;
-    bool reopen(TodoContext* context) override;
-};
-
-/**
- * @class CancelledState
- * @brief 已取消状态
- */
-class CancelledState final : public ITodoState {
-public:
-    std::string getName() const override { return "CANCELLED"; }
-
-    bool start(TodoContext* context) override;
-    bool complete(TodoContext* context) override { return false; }
-    bool cancel(TodoContext* context) override { return false; }
-    bool reopen(TodoContext* context) override;
-};
+#endif // TODO_STATE_MACHINE_HPP
