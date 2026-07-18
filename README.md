@@ -11,7 +11,7 @@
 | **ThreadPool** | 高性能线程池，支持任务调度与并发执行 | 多线程任务处理、异步计算 |
 | **RingBuffer** | 无锁单生产者消费者环形缓冲区（原子操作） | 高性能生产者消费者场景 |
 | **RingBufferV2** | 带锁环形缓冲区（互斥锁+条件变量） | 多生产者多消费者场景 |
-| **TodoStateMachine** | TODO 任务状态机（State Pattern） | 任务状态管理、工作流控制 |
+| **TodoStateMachine** | TODO 任务状态机（转换表方式） | 任务状态管理、工作流控制 |
 
 ---
 
@@ -113,36 +113,35 @@ cmake --build .
 
 ### TodoStateMachine (状态机)
 
-- **状态**: `TODO` → `IN_PROGRESS` → `DONE` / `CANCELLED`
-- **接口**: 
-  - `TodoContext(title)` - 创建任务上下文
-  - `start()` - 开始处理 (TODO → IN_PROGRESS)
-  - `complete()` - 完成 (IN_PROGRESS → DONE)
-  - `cancel()` - 取消 (TODO/IN_PROGRESS → CANCELLED)
-  - `reopen()` - 重新打开 (DONE/CANCELLED → TODO)
-- **特点**: 状态模式实现、合法状态转换、拒绝非法转换
+- **实现方式**: 转换表方式（Transition Table），无需状态父类和子类
+- **状态**: `TODO` → `IN_PROGRESS` → `DONE`
+- **事件**: `START`, `CANCEL`, `COMPLETE`
+- **接口**:
+  - `handleEvent(Event)` - 处理事件，触发状态转换
+  - `getCurrentState()` - 获取当前状态
+  - `setOnTransition(callback)` - 设置状态转换回调
+  - `setOnEnter(State, callback)` - 设置状态进入回调
+  - `setOnExit(State, callback)` - 设置状态退出回调
+- **特点**: 简单直观、易于扩展、回调机制
 
 ---
 
 ## 🔄 状态转换图
 
 ```
-       ┌─────────┐     start      ┌─────────────┐
-       │  TODO   │ ─────────────► │ IN_PROGRESS │
-       └─────────┘               └─────────────┘
-            ▲                          │
-            │                          │
-            │        reopen            │
-            └──────────────────────────┘
-                  ▲              ▲
-                  │   complete   │   cancel
-       ┌──────────┴───┐   ┌─────┴──────────┐
-       │     DONE     │   │   CANCELLED    │
-       └──────────────┘   └───────────────┘
-                  │              ▲
-                  │    start     │
-                  └──────────────┘
+       ┌─────────┐    START     ┌─────────────┐    COMPLETE    ┌──────┐
+       │  TODO   │ ──────────►  │ IN_PROGRESS │ ────────────► │ DONE │
+       └─────────┘              └─────────────┘               └──────┘
+            ▲                        │                              │
+            │                        │ CANCEL                       │
+            └────────────────────────┴──────────────────────────────┘
 ```
+
+**转换规则**:
+- `TODO` + `START` → `IN_PROGRESS`
+- `IN_PROGRESS` + `CANCEL` → `TODO`
+- `IN_PROGRESS` + `COMPLETE` → `DONE`
+- `DONE` + 任意事件 → 无效转换
 
 ---
 
