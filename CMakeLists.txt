@@ -7,5 +7,6 @@ set(CMAKE_CXX_STANDARD 11)
 add_subdirectory(threadpool)
 add_subdirectory(ringbuffer)
 add_subdirectory(ringbufferv2)
-add_subdirectory(todostatemachine)
+add_subdirectory(statemachine)
+add_subdirectory(statemachinev2)
 
